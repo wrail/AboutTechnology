@@ -50,11 +50,11 @@
 
 ![img](https://www.runoob.com/wp-content/uploads/2015/02/1352126739_7909.jpg)
 
-* 可以通过git init 初始化一个git工作空间，git工作空间就是可以看到的文件夹
+- 可以通过git init 初始化一个git工作空间，git工作空间就是可以看到的文件夹
 
-* 可以通过git add [.] /[filename]将在工作空间添加的文件加入暂存区
-* 可以通过commit提交到远端
-* 可以通过reset回退到指定版本库
+- 可以通过git add [.] /[filename]将在工作空间添加的文件加入暂存区
+- 可以通过commit提交到远端
+- 可以通过reset回退到指定版本库
 
 ### 设置用户名和邮箱
 
@@ -149,6 +149,32 @@ git branch -d (branchname)
 ### 提交冲突及解决
 
 发生冲突的时候会在master中出现，需要手动的对这些冲突进行解决，直接进入冲突文件，删除掉冲突文件。
+
+#### 多人协作，分支提交到github
+
+git branch branch1
+
+git checkout branch1
+
+//编辑
+
+//提交
+
+git branch branch2
+
+git checkout branch2
+
+//编辑
+
+//提交
+
+git checkout master
+
+//在合并的过程中要是写的是同一块代码也会出现冲突，因此冲突不仅仅是写的时候会出现，合并分支也会出现
+
+git merge branch1/branch2
+
+
 
 
 
