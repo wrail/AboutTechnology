@@ -105,3 +105,188 @@ drop index index_name on tableName
 show index from tableName/G
 
 show index from tableName;
+
+## SQL优化实践
+
+### 初始化
+
+课程表，教师表，教师证表，并给里面插入数据（先开始初始化没有主键的和有逐渐的explain是不一样的）
+
+```SQl
+ CREATE TABLE `course` (
+  `id` int(4) NOT NULL,
+  `name` varchar(12) DEFAULT NULL,
+  `tid` int(4) DEFAULT NULL,
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+```
+
+```SQL
+ CREATE TABLE `teacher` (
+  `id` int(4) NOT NULL,
+  `name` varchar(10) DEFAULT NULL,
+  `tcid` int(4) DEFAULT NULL,
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+```
+
+```SQL
+ CREATE TABLE `card` (
+  `id` int(4) NOT NULL,
+  `descr` varchar(30) DEFAULT NULL,
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+```
+
+### 实践
+
+1. 查询学生证编号为2或者所授课程编号为1的教师信息
+
+   需要三表查询，先把course和teacher，teacher和card链接起来，然后写条件
+
+   ```SQL
+    explain select t.* from teacher t,course cou,card c 
+    where t.id=cou.tid and t.tcid = c.id and(c.id=2 or cou.id=1);
+   ```
+
+2. 查询教授Mysql老师的描述
+
+   多表连接查询
+
+   ```SQL
+   explain select c.descr from teacher t,course cou,card c where t.id = cou.tid and t.tcid = c.id and cou.name = 'Mysql';
+   ```
+
+   嵌套子查询
+
+   ```SQL
+   
+   ```
+
+   连接+子查询
+
+   ```SQL
+   
+   ```
+
+### explain
+
+> 在Mysql8.0会有些不同
+
+#### id
+
+id标志的就是SELECT的查询序列号：id越大，先查询。id相同，按表中数据个数从小到大查询。
+
+1. 连接查询id是相同的，**id相同的情况下（并且不加任何约束包括主键约束）**，查找顺序从小到大排序
+
+   ![在这里插入图片描述](https://img-blog.csdnimg.cn/2019071412015862.png)
+
+   如上图，t数据条数最下，接下来是cou，接下来是c，如果给t加记录条数，顺序会变化，原因就是**在计算笛卡尔积的时候，存储器更倾向于存储较小的数**，
+
+   例如：2 * 3 * 4 =6 * 4=24 
+
+   ​            4 * 3 * 2 =12 * 2 =24
+
+   虽然结果相同但是，中间值一个是6一个是12
+
+2. 嵌套查询id是不同的，在id不同的情况下，先查id最大的，就如SQL的嵌套子查询，先得出最里层的，才能逐渐往外扩展查询。
+
+   > 多表查询的时候id都相等的，嵌套子查询的时候id是不等的，这就可以看出id的含义和id的关系
+
+3. 多表+嵌套，当然就会出先多表的id是相同的，嵌套的id是不同的，如下图所示
+
+   ![在这里插入图片描述](https://img-blog.csdnimg.cn/20190714121238695.png)
+
+   id值从大的开始执行，id相同就按顺序执行
+
+#### select_type
+
+此列表示查询的类型
+
+* primary：子查询中的最外层，也就是要查的目的对象
+
+* subquery：子查询中的内层，除过最外层的所有层
+
+* simple：简单查询（不包含子查询或者UNION）
+
+* derived：衍生查询（在查询中用到了临时表）
+
+  * from后跟一个子查询，查出来的是一个表（本来不存在这个表，这个表是临时从子查询中查出来的），table表示是那个表，derived2表示这个衍生表是从id为2的表中来的
+
+    ![1563081093833](C:\Users\weiao\AppData\Roaming\Typora\typora-user-images\1563081093833.png)
+
+  * 在子查询里，如果有table1 union table2，则table1 就是derived
+
+* union
+
+* union result：显示谁和谁的union关系
+
+#### table
+
+这个值可能是表名、表的别名或者一个为查询产生临时表的标识符，如派生表、子查询或集合。
+
+#### type
+
+官方文档称之为“访问类型”，常见的就那么几种，按照效率最好到最差依次排列依次是
+
+**null > system/const > eq_ref > ref > ref_or_null  >index_merge >  range > index >  all** 
+
+* NULL：在优化过程中就已得到结果，不用再访问表或索引。
+
+* system/const：在整个查询过程中这个表最多只会有一条匹配的行，比如主键 id=1 就肯定只有一行
+
+  表最多有一个匹配行，const用于比较primary key 或者unique索引。因为只匹配一行数据，所以一定是用到primary key 或者unique 情况下才会是const。没有索引就是system。
+
+* eq_ref：每个索引键的查询返回唯一行数据（有且只能有一个，不能多，不能少，也不能为0）
+
+  简单来说，就是多表连接中使用primary key或者 unique key作为关联条件，而且连接的某项个数要相同
+
+* ref：非唯一性索引，对于每个索引键的查询返回的数据不唯一（0，多个）
+
+* range：只检索给定范围的行
+
+  一般来说就是where后是大于，小于等等，或者是between，in（in有时候会失效，转化为ALL）等等
+
+  ![在这里插入图片描述](https://img-blog.csdnimg.cn/20190715001419306.png)
+
+* index ： **索引扫描**（查出来的结果仅仅是索引列），这个比all效率要好一点，只查表的一部分必然比查所有快。（只把索引列查找一遍，就相当于遍历B+树）
+
+* all : 这个就是**全表扫描**了，一般这样的出现这样的SQL而且数据量比较大的话那么就需要进行优化了，要么是这条SQL没有用上索引，要么是没有建立合适的索引。
+
+> 基本可能实现的最好情况应该是ref
+
+### possible_key
+
+可能能遇到的索引，如果为null说明没有预测，预测有时候不准确
+
+![1563121571863](C:\Users\weiao\AppData\Roaming\Typora\typora-user-images\1563121571863.png)
+
+### key
+
+实际用到的索引
+
+### key_len
+
+索引长度，经常用来判断复合索引是否完全被使用，一个char四个字节
+
+测试：创建一张表，并加上索引
+
+```SQL
+ CREATE TABLE `len` (
+  `name` char(20) DEFAULT NULL,
+  KEY `i_len` (`name`)
+)
+```
+
+```SQL
+mysql> explain select * from len where name = 'null';
++----+-------------+-------+------------+------+---------------+-------+---------+-------+------+----------+--------------------------+
+| id | select_type | table | partitions | type | possible_keys | key   | key_len | ref   | rows | filtered | Extra                    |
++----+-------------+-------+------------+------+---------------+-------+---------+-------+------+----------+--------------------------+
+|  1 | SIMPLE      | len   | NULL       | ref  | i_len         | i_len | 81      | const |    1 |   100.00 | Using where; Using index |
++----+-------------+-------+------------+------+---------------+-------+---------+-------+------+----------+--------------------------+
+1 row in set, 1 warning (0.01 sec)
+```
+
+**len的结果是81，如果将name修改为not null 结果是80，因为如果可以为空，mysql会留出一位作为占用。**
+
+如果是复合索引的话，可以根据len的长度来判断到底执行到那一步，比如一个索引是（name1，name2），如果只查到第一个就查出来的话len就是80，如果查到第二个才查出来的话len就是160
+
+如果是varchar的话，varchar（20）结果是83（一位是空标志位，两位是varchar标志位），
