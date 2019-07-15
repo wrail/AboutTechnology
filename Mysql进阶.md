@@ -108,6 +108,14 @@ show index from tableName;
 
 ## SQL优化实践
 
+### SQL解析过程
+
+sql编写过程：
+
+select dinstinct  .. from  ..join  ..on ..where ..group by  ..having  ..order by ...limit ...
+
+from .. on  .. join ..where  ..group by ...having ...select  distinct ...order by limit ..
+
 ### 初始化
 
 课程表，教师表，教师证表，并给里面插入数据（先开始初始化没有主键的和有逐渐的explain是不一样的）
@@ -165,6 +173,8 @@ show index from tableName;
    ```SQL
    
    ```
+
+**注意：研究索引的前提要有索引**
 
 ### explain
 
@@ -252,17 +262,17 @@ id标志的就是SELECT的查询序列号：id越大，先查询。id相同，�
 
 > 基本可能实现的最好情况应该是ref
 
-### possible_key
+#### possible_key
 
-可能能遇到的索引，如果为null说明没有预测，预测有时候不准确
+指出MySQL能使用哪个索引在表中找到记录，查询涉及到的字段上若存在索引，则该索引将被列出，但不一定被查询使用（该查询可以利用的索引，如果没有任何索引显示 null）
 
 ![1563121571863](C:\Users\weiao\AppData\Roaming\Typora\typora-user-images\1563121571863.png)
 
-### key
+#### key
 
 实际用到的索引
 
-### key_len
+#### key_len
 
 索引长度，经常用来判断复合索引是否完全被使用，一个char四个字节
 
@@ -290,3 +300,321 @@ mysql> explain select * from len where name = 'null';
 如果是复合索引的话，可以根据len的长度来判断到底执行到那一步，比如一个索引是（name1，name2），如果只查到第一个就查出来的话len就是80，如果查到第二个才查出来的话len就是160
 
 如果是varchar的话，varchar（20）结果是83（一位是空标志位，两位是varchar标志位），
+
+#### ref
+
+就是在连接的时候用到**两个或多个索引相关联**ref就是与它关联的属性列，如果**索引的值是一个固定值，那就是const**。
+
+![在这里插入图片描述](https://img-blog.csdnimg.cn/20190715105141707.png)
+
+#### rows
+
+估算的找到所需的记录所需要读取的行数
+
+#### Extra
+
+测试
+
+```SQL
+create table test01(
+	a1 char(3),
+    a2 char(3),
+    a3 char(3),
+    index idx_a1(a1),
+    index idx_a2(a2),
+    index idx_a3(a3)
+);
+
+explain select * from test01 where a1='' order by a1;
+
+explain select * from test01 where a1='' order by a2;
+
+drop index idx_a1 on test01;
+drop index idx_a2 on test01;
+drop index idx_a3 on test01;
+
+//增加一个复合索引
+alter table test01 add index idx_a1_a2_a3(a1,a2,a3); 
+
+//跨列演示
+explain select * from test01 where a1='' order by a3;
+
+//using temporary
+explain select * from test01 where a1 in('1','2','3') group by a1;
+
+explain select * from test02 where a1 in('1','2','3') group by a2
+
+```
+
+##### using jion buffer
+
+Mysql给加上了连接缓存，SQL写的太差了
+
+##### using filesort
+
+是因为在查找后对另外一个字段进行排序，造成了第二次排序。性能消耗较大，常见于order by
+
+**针对于单索引**
+
+![在这里插入图片描述](https://img-blog.csdnimg.cn/20190715111856471.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L3FxXzQyNjA1OTY4,size_16,color_FFFFFF,t_70)
+
+**复合索引(不能跨列)**
+
+跨列就是上边建立的inx_a1_a2_a3扫描a1后直接扫描a3，跳过了a2
+
+![在这里插入图片描述](https://img-blog.csdnimg.cn/20190715112737743.png)
+
+如果a1接下来order by a2就不会出现using filesort
+
+![1563161330601](C:\Users\weiao\AppData\Roaming\Typora\typora-user-images\1563161330601.png)
+
+##### using temporary
+
+用到了临时表，性能消耗比较大，一般出现在group by里(where 在 group by前执行)
+
+已经有表了，但是这张表不适用于后边的操作，就和下图中查a1却根据a2分组
+
+![在这里插入图片描述](https://img-blog.csdnimg.cn/20190715113936377.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L3FxXzQyNjA1OTY4,size_16,color_FFFFFF,t_70)
+
+##### using index
+
+说明性能提升了，索引覆盖。不需要读取表，从索引中就可以得到所以想要的字段。
+
+索引覆盖就是使用到的列全在索引中
+
+![在这里插入图片描述](https://img-blog.csdnimg.cn/20190715115718512.png)
+
+如果用到了索引覆盖会对key和possible key产生影响
+
+如果没有where 索引只会出现在key里
+
+如果有where有possible key和key
+
+![在这里插入图片描述](https://img-blog.csdnimg.cn/20190715120541599.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L3FxXzQyNjA1OTY4,size_16,color_FFFFFF,t_70)
+
+##### using where
+
+需要回表查询，如果age是索引，使用age查信息，需要回原表，索引会有using where
+
+##### impossible where
+
+不可能成立的where条件
+
+比如:select * from test01 where id=1 and id =2;不可能成立
+
+### 优化器优化实例
+
+test01表上有a1,a2,a3,a4复合索引
+
+```SQL
+select * from test01 where a1='' and a2 ='' and a3 ='';（推荐使用）
+//两个的结果是相同的，虽然索引顺序不一致（这是优化过的，不一定每次都可以）
+select * from test01 where a3='' and a2= '' and a1='';
+
+//a1，a2不需要回表查询，a4需要回表查询（跨列了，导致索引失效，因此有using where，也可一十一key len校验）
+select * from test01 where a1='' and a2='' and a4='' order by a3;
+
+//这个就不能进行优化了，因为where和order by里的列不能连接在一起
+select * from test01 where a1='' order by a3;
+
+//这个就可以
+select * from test01 where a1='' and a2='' order by a3,a4;
+```
+
+
+
+#### 优化意见
+
+* 对于单索引，where那个字段就尽量order by那个字段
+* 对于复合索引，where和order按照复合索引顺序来，不要跨列或无序使用
+
+### 优化
+
+#### 单表优化
+
+数据准备
+
+```SQL
+create table book(
+
+    bin int(4) primary key,
+    name varchar(20) not null,
+    authorid int(4) not null,
+    publicid int(4) not null,
+    typeid int(4) not null
+);
+
+insert into book values(1,'java',1,1,1);
+insert into book values(2,'py',2,2,1);
+
+```
+
+查询authorid=1且typeid为1,2或3的bid并且按照typeid的顺序递减
+
+```SQL
+select bid from book where typeid in(1,2,3) and authorid = 1 order by typeid desc;
+```
+
+查看其查询计划，可以看到type是ALL，Extra是filesort，当然这不是我们想要的
+
+![在这里插入图片描述](https://img-blog.csdnimg.cn/20190715150832278.png)
+
+按序加索引
+
+alter table book add index idx_bta(bid,typeid,authorid);
+
+![在这里插入图片描述](https://img-blog.csdnimg.cn/20190715153346931.png)
+
+可以发现type变为index，extra 也有了Using index，但是filesort还存在，这就说明顺序是不对的，按照我们前面的编写顺序和执行顺序可以看出select 的是在后面的
+
+因此可以优化为下面，bid可以查表得出，但是没有索引快
+
+alter table book add index idxx_tab(typeid,authorid,bid);
+
+![在这里插入图片描述](https://img-blog.csdnimg.cn/20190715153802834.png)
+
+可以看到filesort果然消失了
+
+注意：如果索引进行了升级替换就删掉原来索引防止数据干扰
+
+```SQL
+SQL drop index idx_bta on book;
+```
+
+根据前面所知道的index并不是一个很好的选择，我们需要进行改进，而且前面说到过**in有时候会导致索引失效**，因此尽量把in放在最后，避免影响其它的条件，一次我们需要改一下复合索引
+
+```SQL
+drop index idxx_tab on book;
+
+alter table book add index idx_atb(authorid,typeid,bid);
+
+select bid from book where authorid = 1 and typeid in(1,2,3)  order by typeid desc;
+```
+
+![在这里插入图片描述](https://img-blog.csdnimg.cn/20190715155641897.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L3FxXzQyNjA1OTY4,size_16,color_FFFFFF,t_70)
+
+可以看出in是不稳定的因此放在where的最后面
+
+个人认为可以使用between  and 可以使得type变为range
+
+![在这里插入图片描述](https://img-blog.csdnimg.cn/20190715160201447.png)
+
+但是in有时也会出现ref。
+
+**疑问**：在Extra中同时出现Using where和Using index不会会有矛盾？
+
+当然不会，using where 是需要回原表，而using index是不需要回原表，为什么会出现这种问题呢？
+
+因为上述查询中(authorid,typeid,bid)，authorid在索引表中有，因此不需要回原表，typeid虽然也建立的索引，但是in使得typeid的索引失效，从而导致typeid回原表。
+
+我们如果把查询条件中的in换位等号
+
+```SQL
+select bid from book where authorid = 1 and typeid =2 order by typeid desc;
+```
+
+![在这里插入图片描述](https://img-blog.csdnimg.cn/20190715160920951.png)
+
+可以发现就没有using where了
+
+#### 多表优化
+
+准备工作
+
+```SQL
+create table teacher2(
+
+    tid int(4) primary key,
+    cid int(4) not null
+);
+
+insert into teacher2 values(1,2);
+insert into teacher2 values(2,1);
+insert into teacher2 values(3,3);
+
+
+create table course2(
+
+    cid int(4),
+    cname varchar(20)
+);
+
+insert into course2 values(1,'JAVA');
+insert into course2 values(2,'Python');
+insert into course2 values(3,'kotlin');
+
+//通过一个左外连接查询	
+select * from teacher2 t left outer join course2 c on t.cid=c.cid where c.cname ='JAVA';
+
+```
+
+查看执行计划
+
+![在这里插入图片描述](https://img-blog.csdnimg.cn/20190715233208354.png)
+
+如果此时要加索引，该往哪加，该怎么加？
+
+**左外连接给左表加索引，右外连接给右表加索引（根据频繁程度）**
+
+比如有一个小表10条数据，大表300条数据，**在where的时候把小表的条件放在前面**（根据计算机的空间性原理）
+
+使用小表驱动大表（**索引建立在用的频繁的字段上**） 
+
+在实际生活中一定是cid用的比较多，通过course的cid和教师表关联，因此给教师表的cid加索引
+
+```SQL
+alter table teacher2 add index idx_cid(cid);
+
+//根据课程名进行检索也很经常用，如上边的例子，因此可以给课程名加索引
+alter table course2 add index index_course2_name(cname);
+```
+
+接下来再查看执行计划
+
+```SQL
+select * from teacher2 t left outer join course2 c on t.cid=c.cid where c.cname ='JAVA';
+```
+
+先加了idx_cid索引后执行计划，发现变化
+
+![在这里插入图片描述](https://img-blog.csdnimg.cn/20190715233439461.png)
+
+再加了cname索引后再次查看执行计划
+
+![在这里插入图片描述](https://img-blog.csdnimg.cn/20190715233408717.png)
+
+三张表以及多张表和两张表是一样的
+
+1. 小表驱动大表
+2. 索引建立在经常查询的字段上
+
+## 避免索引失效
+
+怎么可以避免索引失效
+
+1. 复合索引不要跨行，无序使用（最优左前缀）
+
+2. 复合索引，尽量使用全索引匹配（就相当于多级目录）
+
+3. 不要在索引上进行任何操作（计算，类型转换，函数）
+
+   如select * from teacher t,course c where t.id*3=c.tid;
+
+   ![在这里插入图片描述](https://img-blog.csdnimg.cn/20190715235746442.png)
+
+4. 复合索引写不等于（！=， <>）或者大于或is null,is not null就失效了，范围查询一般是本身有用，后面失效。
+
+   最直接最有效的补救方法就是覆盖索引
+
+5. like中尽量少用’%‘开头，否则会导致索引失效，如果必须的话可以采用索引覆盖，可以稍稍提高性能
+
+6. 尽量不要进行显示或隐式的类型转换（底层进行类型转换，造成索引失效）
+
+   如：select * from teacher where tname = '111';  和 select * from teacher where tname = 111;
+
+7. 尽量不要使用or，会导致索引失效（甚至可以把左边的索引失效）
+
+> 注意：对于复合索引，如果前面条件失效，后面全部失效，因此把容易失效的放在最后边,SQL优化是一个概率性的并不是绝对的。	
+
+为什么是概率性的：因为SQL中有优化器会干扰我们的优化。
+
