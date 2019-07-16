@@ -588,7 +588,7 @@ select * from teacher2 t left outer join course2 c on t.cid=c.cid where c.cname 
 1. 小表驱动大表
 2. 索引建立在经常查询的字段上
 
-## 避免索引失效
+### 避免索引失效
 
 怎么可以避免索引失效
 
@@ -618,3 +618,354 @@ select * from teacher2 t left outer join course2 c on t.cid=c.cid where c.cname 
 
 为什么是概率性的：因为SQL中有优化器会干扰我们的优化。
 
+### SQL一些优化方法
+
+1. exist和in
+
+   ```SQL
+   //将主查寻的结果放到子查询中进行校验，如果字查询中存在就保留数据
+   select .. from table where exist(子查询) 
+   
+   //就相当于给teacher的tname字段做了映射
+   select tname from teacher where exists(select * from teacher)
+   
+   //和exist差不多，将主查询字段和子查询中此字段相同的保留下来
+   select .. from table where column in (子查询)
+   ```
+
+   如果主查询数据集大，就使用In，效率高。
+
+   如果子查询数据集大就使用exist，效率高。
+
+2. order by 优化
+
+   using filesort 有两种排序算法：双路排序，单路排序（根据I/O的次数来划分）
+
+   Mysql4.1前使用双路排序 ，需要扫描两次磁盘
+
+   ![在这里插入图片描述](https://img-blog.csdnimg.cn/201907161122238.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L3FxXzQyNjA1OTY4,size_16,color_FFFFFF,t_70)
+
+   1. 从磁盘读取排序字段，对读取出来的字段在buffer（缓冲区）中排序
+   2. 再次扫描其它字段
+
+   Mysql4.1后为单路排序，只读取一次（全部字段）
+
+   只进行一次读取，然后在buffer中排序。但是单路不仅仅是单路，如果数据量太大的话，buffer容量有限，因此就得进行多次的“分片操作”来完成（多次I/O）
+
+   ```SQL
+   //设置buffer的大小
+   set max_length_for_sort_data = xx字节
+   ```
+
+   如果需要的空间大于设置的buffer，Mysql就会自动从单路切换为双路
+
+   因此order by优化方法如下：
+
+   1. 选择合适的buffer，调整多路和单路
+   2. 避免使用select * ....  where         因为Mysql内部需要对*进行解析，并且 * 很难实现所以覆盖，因此原则就是用到那个字段写那个
+   3. 复合索引不要跨列使用
+   4. 尽量保持排序字段的升降一致性（order by a desc,c desc），全升或者全降。
+
+## Mysql慢查询
+
+是一种记录日志，用于记录Mysql中相应实践查过阈值的SQL（slow_query_log）
+
+```SQL
+//通过SQL查看是否开启慢查询
+show variables like '%slow_query_log%';
+```
+
+### 开启和关闭慢查询
+
+slow_query_log默认是ON，有两种方法可以进行设置
+
+1. 暂时性开启/关闭
+
+   set_global slow_query_log=1/0;
+
+   ![在这里插入图片描述](https://img-blog.csdnimg.cn/20190716113901643.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L3FxXzQyNjA1OTY4,size_16,color_FFFFFF,t_70)
+
+2. 永久性开启/关闭
+
+   /ect/my.cnf中配置，在mysqld下
+
+   ![在这里插入图片描述](https://img-blog.csdnimg.cn/20190716124147193.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L3FxXzQyNjA1OTY4,size_16,color_FFFFFF,t_70)
+
+3. 慢查询阈值
+
+   show variables like '%long_query_time%';
+
+4. 设置临时慢查询阈值
+
+   set global long_query_time=5;
+
+5. 永久慢查询阈值
+
+   /ect/my.cnf追加
+
+   在mysqld下
+
+   long_query_time=xx;
+
+查询慢查询条数
+
+![在这里插入图片描述](https://img-blog.csdnimg.cn/20190716132152241.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L3FxXzQyNjA1OTY4,size_16,color_FFFFFF,t_70)
+
+### 排查慢查询的方法
+
+1. 使用配置的日志文件路径查看
+
+2. 使用mysqldumpslow查看慢SQL，如果日志多的话，可以通过过滤条件定位出慢SQL
+
+   mysqldumpslow --help
+
+   ![在这里插入图片描述](https://img-blog.csdnimg.cn/20190716132714159.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L3FxXzQyNjA1OTY4,size_16,color_FFFFFF,t_70)
+
+## 海量数据分析
+
+模拟并通过profiles分析海量数据
+
+```SQL
+create table dept(
+
+    dno int(5) primary key default 0,
+    dname varchar(30) default '',
+    loc varchar(30) default ''
+)engine=innodb default charset=utf8;
+
+create table emp(
+
+    eid int(10) primary key,
+    ename varchar(20) not null default '',
+    job varchar(20) not null default '',
+    deptno int(5) not null default 0
+)engine=innodb default charset=utf8;
+
+set global log_bin_trust_function_creators=1;
+
+//随机字符串函数
+delimiter $
+create function randstring(n int) returns varchar(255)
+begin
+        declare all_str varchar(255) default 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
+        declare return_str varchar(255) default '';
+        declare i int default 0;
+        while i<n
+        do
+              set return_str = concat(return_str,substring(all_str,FLOOR(1+rand()*52),1));
+              set i=i+1;
+         end while;
+         return return_str;
+ end $
+
+//中间有一段写错了，修改后删除重新执行了
+DROP function IF EXISTS randstring;       
+//产生随机整数
+
+create function ran_num() returns int(5)
+begin
+      declare i int default 0;
+      set i = floor(rand()*100);
+      return i;
+end$ $
+
+//通过存储过程插入大量数据
+//给emp表插
+create procedure insert_emp(in eid_start int(10),in data_times int(10))
+begin 
+         declare i int default 0;
+         set autocommit = 0;
+         while i<data_times
+         repeat
+                  insert into emp values(eid_start,randstring(5),'job',ran_num());
+				set eid_start = eid_start+1;
+                set i = i+1;
+				  until i = data_times
+		  end repeat;
+		  commit;
+end $
+
+//在编写时候出错，
+DROP procedure IF EXISTS insert_emp; 
+
+//给dept拆入数据
+create procedure insert_dept(in dno_start int(10),in data_times int(10))
+begin
+		declare i int default 0;
+		set autocommit = 0;
+		repeat
+			insert into dept values(dno_start+1,randstring(6),randstring(8));
+			set i = i+1;
+			until i = data_times
+			end repeat;
+			commit;
+end $
+
+delimiter ;
+
+call insert_emp(1000,8000000);
+call insert_dept(10,30);
+
+```
+
+1. 分析海量数据：profiles
+
+   show profile ：打开它只有的语句都会被记录下来还有执行时间（不精确）
+
+```SQL
+//只有在打开后才会有记录
+set profiling = on;
+//查询profiles的状态
+show variables like '%profiling%';
+```
+
+2. 精确分析：
+
+   show profile all for query id          //id是profiles里面出现的id
+
+3. 全局日志：记录开启后的全部SQL
+
+   ```SQL
+   show variables like ='%general_log%';
+   
+   //记录在系统表
+   set global general_log=1;
+   set global log_output='table';--将SQL记录在表中
+   
+   //记录在文件
+   set global general_log=1;
+   set global log_output='file';--将SQL记录在表中
+   set global log_output_file = 'xxx';
+   ```
+
+   开启后记录会被记录在mysql.general_log表中
+
+   ```sql
+   select * from mysql.general_log;
+   ```
+
+   ## 锁机制
+
+   锁按照方式可以分为
+
+   * 读锁
+   * 写锁
+
+   锁按照粒度分
+
+   * 行锁
+   * 页锁
+   * 表锁
+
+   锁的粒度越小，开销就越大，表锁范围大，无死锁，容易冲突，行锁范围小，有死锁，并发强，不易发生冲突，
+
+   关于锁的部分在Mysql笔记中有详细的分析。
+
+   ```SQL
+   //加锁语句
+   lock table table1 read/write ,table2 ....
+   
+   //查看有没有加索
+   show open tables;
+   ```
+
+### 表锁
+
+使用MyISAM存储引擎创建tablelock表
+
+如果是读锁的话，所有会话都可以进行读操作，都不能在此锁打开之前进行修改操作
+
+如果是写锁，只能有一个会话进行写操作，其余会话就原地等待占用锁的会话的释放，只有释放后才能使用。
+
+![在这里插入图片描述](https://img-blog.csdnimg.cn/20190716203914921.png)
+
+Mysql表级锁的锁模式
+
+MyISAM在执行select前，会自动的给涉及的所有的表加读锁
+
+在执行更新操作之前（DML），会自动给涉及的表加写锁，如果多个操作同时操作一张表，只能有一个进去，其余的在外面等待。
+
+### 行锁
+
+行锁的执行过程
+
+![在这里插入图片描述](https://img-blog.csdnimg.cn/2019071621220335.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L3FxXzQyNjA1OTY4,size_16,color_FFFFFF,t_70)
+
+只要多个用于执行的不是同一个数据项，就不会出现这种状况
+
+行锁的注意事项
+
+1. 如果该字段没有索引，那么行锁就会转变为表锁
+
+   值得注意的是，前面的那些能导致索引失效的原因也会间接的决定是行锁还是表锁
+
+   例如：因为类型转换而导致索引失效
+
+   ![在这里插入图片描述](https://img-blog.csdnimg.cn/20190716213637533.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L3FxXzQyNjA1OTY4,size_16,color_FFFFFF,t_70)
+
+> 行锁只能通过事务（commit）来释放锁，而表锁可以通过unlock tables，也可以通过commit。
+
+2. 行锁的特殊情况：间隙锁
+
+   间隙就是比如在一段连续的条件中，不存在的值，比如update ...where id>1 adn id<10 ,但是中间没有id为5，id为5就称为间隙
+
+   **Mysql会自动给此类间隙加锁成为间隙锁。在这个修改语句为commit时，另一个用户是不能对它进行操作的。**
+
+
+
+### 分析表锁定
+
+#### 关闭自动提交的几种常用方式
+
+1. set autocommit=0;
+2. start transaction;
+3. begin;
+
+#### 表锁
+
+```SQL
+//查看加锁状态,0代表未加锁，1代表加锁
+show open tables;
+```
+
+![在这里插入图片描述](https://img-blog.csdnimg.cn/20190716204139969.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L3FxXzQyNjA1OTY4,size_16,color_FFFFFF,t_70)
+
+
+
+```SQL
+//分析表锁定的程度
+show status like 'table%';
+
+Table_locks_immediate:当前能获取到的锁的个数
+Table_locks_waited:当前需要等待的表锁数（锁数量不变，该数越大，说明竞争越大）
+```
+
+![在这里插入图片描述](https://img-blog.csdnimg.cn/20190716230705669.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L3FxXzQyNjA1OTY4,size_16,color_FFFFFF,t_70)
+
+可以用此来分析该用那种存储引擎
+
+一般如果Table_locks_immediate/Table_locks_waited>5000，建议采用InnoDB，支持更高的并发。
+
+#### 行锁
+
+```SQL
+//在innodb下查看行锁
+show status like '%innodb_row_lock%';
+
+//当前等待锁的数量
+Innodb_row_lock_current_waits
+//从系统启动到现在等的总时长
+Innodb_row_lock_time
+//平均等待时长
+Innodb_row_lock_time_avg
+//最大等待时长
+Innodb_row_lock_time_max
+//从系统启动到现在一共等待的次数
+Innodb_row_lock_waits
+```
+
+
+
+![在这里插入图片描述](https://img-blog.csdnimg.cn/2019071623054582.png)
+
+> 给查询语句可以通过后边加一个for update加锁。
