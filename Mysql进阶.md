@@ -969,3 +969,32 @@ Innodb_row_lock_waits
 ![在这里插入图片描述](https://img-blog.csdnimg.cn/2019071623054582.png)
 
 > 给查询语句可以通过后边加一个for update加锁。
+
+## 主从同步
+
+远程访问需要授权设置
+
+```SQL
+GRANT ALL PRIVILES ON ...........
+然后
+FLASH PRIVILEGES;
+```
+
+原理图1：
+
+![在这里插入图片描述](https://img-blog.csdnimg.cn/20190717004536660.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L3FxXzQyNjA1OTY4,size_16,color_FFFFFF,t_70)
+
+原理图2：
+
+![在这里插入图片描述](https://img-blog.csdnimg.cn/20190717004433617.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L3FxXzQyNjA1OTY4,size_16,color_FFFFFF,t_70)
+
+实现主从同步的原理（这个过程要由三个线程来完成）
+
+1. master将改变的记录值记录在本地的二进制日志里（binary log）——该过程称为二进制日志事件
+2. slave将master的binary log拷贝到自己的relay log（中继日志文件）中
+3. 中继日志事件将数据读取到自己的数据库里
+
+主从复制的和Reids中的主从复制类似
+
+[一篇主从复制的博客](https://blog.csdn.net/darkangel1228/article/details/80004222)
+
