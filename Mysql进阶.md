@@ -70,7 +70,7 @@ create table tb(
 
 
 
-![1563017872969](C:\Users\weiao\AppData\Roaming\Typora\typora-user-images\1563017872969.png)
+![在这里插入图片描述](https://img-blog.csdnimg.cn/20191130144632400.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L3FxXzQyNjA1OTY4,size_16,color_FFFFFF,t_70)
 
 如上图所示，B+树的所以数据都在叶子节点，所以每个数字的查询次数都是相同的，上边的蓝色块是为了提供临界，共黄色指针选择
 
@@ -266,8 +266,7 @@ id标志的就是SELECT的查询序列号：id越大，先查询。id相同，�
 
 指出MySQL能使用哪个索引在表中找到记录，查询涉及到的字段上若存在索引，则该索引将被列出，但不一定被查询使用（该查询可以利用的索引，如果没有任何索引显示 null）
 
-![1563121571863](C:\Users\weiao\AppData\Roaming\Typora\typora-user-images\1563121571863.png)
-
+![在这里插入图片描述](https://img-blog.csdnimg.cn/20191130145149266.png)
 #### key
 
 实际用到的索引
